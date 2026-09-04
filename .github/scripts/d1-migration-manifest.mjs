@@ -100,7 +100,6 @@ export const D1_MIGRATIONS = [
       "table:device_sessions",
       "table:realtime_tickets",
       "table:message_events",
-      "index:idx_messages_client_message",
       "index:idx_uploaded_files_client_upload",
       "index:idx_device_sessions_refresh_token",
       "index:idx_device_sessions_user_installation_active",

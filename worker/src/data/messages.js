@@ -2,6 +2,7 @@ import { decryptMessageContent, encryptMessageContent } from "../encryption.js";
 import { pickAttachment, publicFileUrl } from "../utils.js";
 import { normalizeMentionUserIds } from "./mentions.js";
 import { fileBelongsToUser } from "./uploaded-files.js";
+import { getPeerLastReadMessageId } from "./unread.js";
 
 function toNullableNumber(value) {
 	const number = Number(value);
@@ -98,7 +99,13 @@ const MESSAGE_SELECT = `SELECT
 	  ), '[]') AS mentions_json
 	 FROM messages m LEFT JOIN users u ON u.id = m.sender_id`;
 
-export async function listMessages(env, roomId, before = null, limit = 30) {
+export async function listMessages(
+	env,
+	roomId,
+	before = null,
+	limit = 30,
+	options = {},
+) {
 	const filters = ["m.channel_id = ?", "m.deleted_at IS NULL"];
 	const binds = [Number(roomId)];
 	if (before) {
@@ -109,7 +116,31 @@ export async function listMessages(env, roomId, before = null, limit = 30) {
 		.prepare(`${MESSAGE_SELECT} WHERE ${filters.join(" AND ")} ORDER BY m.id DESC LIMIT ?`)
 		.bind(...binds, Number(limit))
 		.all();
-	return (await Promise.all(results.map((row) => mapDecryptedMessage(env, row)))).reverse();
+
+	const currentUserId = options?.currentUserId ? Number(options.currentUserId) : null;
+	const isDm = options?.roomKind === "dm" || options?.roomKind === "direct";
+
+	let peerLastReadId = 0;
+	if (currentUserId && (isDm || !options?.roomKind)) {
+		peerLastReadId = await getPeerLastReadMessageId(env.DB, {
+			channelId: roomId,
+			myUserId: currentUserId,
+		});
+	}
+
+	const messages = (await Promise.all(results.map((row) => mapDecryptedMessage(env, row)))).reverse();
+
+	if (currentUserId && (isDm || peerLastReadId > 0)) {
+		for (const msg of messages) {
+			if (msg.sender?.kind === "local" && Number(msg.sender.id) === currentUserId) {
+				const isRead = peerLastReadId > 0 && msg.id <= peerLastReadId;
+				msg.isReadByPeer = isRead;
+				msg.deliveryStatus = isRead ? "read" : "sent";
+			}
+		}
+	}
+
+	return messages;
 }
 
 export async function getMessageById(env, messageId) {

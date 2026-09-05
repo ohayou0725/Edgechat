@@ -1,6 +1,7 @@
 import { listMessages } from '../data/messages.js';
 import { getPinnedMessage } from '../data/pins.js';
 import { markRoomRead } from '../data/unread.js';
+import { broadcastRoomReadReceipt } from '../do-bridge.js';
 import { authorizeRoom, isRoomKind } from '../room-access.js';
 import { errorResponse, parseJsonRequest, sanitizeLimit } from '../utils.js';
 
@@ -23,13 +24,29 @@ export function registerMessageRoutes(app) {
     }
 
     const [messages, pinnedMessage] = await Promise.all([
-      listMessages(c.env, roomId, before, limit),
+      listMessages(c.env, roomId, before, limit, {
+        currentUserId: session.userId,
+        roomKind: kind
+      }),
       getPinnedMessage(c.env, roomId)
     ]);
-    await markRoomRead(c.env.DB, {
+    const lastReadMessageId = await markRoomRead(c.env.DB, {
       channelId: roomId,
       userId: session.userId
     });
+
+    if (c.env.CHANNEL_ROOM && lastReadMessageId > 0) {
+      const p = broadcastRoomReadReceipt(c.env, {
+        room: access.room,
+        userId: session.userId,
+        lastReadMessageId
+      }).catch(() => {});
+      if (c.executionCtx?.waitUntil) {
+        c.executionCtx.waitUntil(p);
+      } else {
+        await p;
+      }
+    }
 
     return c.json({
       room: {
@@ -39,7 +56,8 @@ export function registerMessageRoutes(app) {
         description: access.room.description
       },
       messages,
-      pinnedMessage
+      pinnedMessage,
+      lastReadMessageId
     });
   });
 
@@ -70,6 +88,19 @@ export function registerMessageRoutes(app) {
       userId: session.userId,
       messageId
     });
+
+    if (c.env.CHANNEL_ROOM && lastReadMessageId > 0) {
+      const p = broadcastRoomReadReceipt(c.env, {
+        room: access.room,
+        userId: session.userId,
+        lastReadMessageId
+      }).catch(() => {});
+      if (c.executionCtx?.waitUntil) {
+        c.executionCtx.waitUntil(p);
+      } else {
+        await p;
+      }
+    }
 
     return c.json({ ok: true, lastReadMessageId });
   });

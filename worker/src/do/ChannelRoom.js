@@ -15,6 +15,7 @@ import { authorizeRoom } from '../room-access.js';
 import { validateSession } from '../session.js';
 import { projectUnreadMessage } from '../unread-projection.js';
 import { isVerifiedInternalRequest, parseVerifiedPrincipal } from '../verified-identity.js';
+import { markRoomRead } from '../data/unread.js';
 
 const MESSAGE_SIZE_LIMIT = 10 * 1024;
 
@@ -68,8 +69,11 @@ export class ChannelRoom {
     this.env = env;
     this.connections = new Map();
 
-    for (const socket of this.state.getWebSockets()) {
-      const meta = socket.deserializeAttachment();
+    const sockets = typeof this.state?.getWebSockets === 'function'
+      ? this.state.getWebSockets()
+      : [];
+    for (const socket of sockets) {
+      const meta = socket.deserializeAttachment?.();
       if (meta) {
         this.connections.set(socket, meta);
       }
@@ -182,6 +186,25 @@ export class ChannelRoom {
     return Response.json({ ok: true, created: result.created, message: result.message });
   }
 
+  async receiveReadReceipt(request) {
+    if (!isVerifiedInternalRequest(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+
+    const payload = await request.json();
+    const { room, userId, lastReadMessageId } = payload;
+    const packet = JSON.stringify({
+      protocolVersion: 1,
+      type: 'read_receipt',
+      roomId: Number(room?.id || 0),
+      roomKind: room?.kind || 'public',
+      readUpToId: Number(lastReadMessageId || 0),
+      readerUserId: Number(userId || 0)
+    });
+    await this.broadcast(packet);
+    return Response.json({ ok: true });
+  }
+
   async receiveClientAction(request) {
     if (!isVerifiedInternalRequest(request)) {
       return Response.json(
@@ -229,6 +252,23 @@ export class ChannelRoom {
         await this.broadcast(result.packet);
         return Response.json({ ok: true, messageId: result.messageId });
       }
+      if (action?.type === 'read' || action?.type === 'mark_read') {
+        const lastReadMessageId = await markRoomRead(this.env.DB, {
+          channelId: access.room.id,
+          userId: principal.userId,
+          messageId: action.messageId
+        });
+        const packet = JSON.stringify({
+          protocolVersion: 1,
+          type: 'read_receipt',
+          roomId: Number(access.room.id),
+          roomKind: access.room.kind,
+          readUpToId: lastReadMessageId,
+          readerUserId: Number(principal.userId)
+        });
+        await this.broadcast(packet);
+        return Response.json({ ok: true, lastReadMessageId });
+      }
       return Response.json(
         { error: { code: 'invalid_request', message: '不支持的消息操作' } },
         { status: 400 }
@@ -265,6 +305,10 @@ export class ChannelRoom {
 
     if (url.pathname === '/client-action' && request.method === 'POST') {
       return this.receiveClientAction(request);
+    }
+
+    if (url.pathname === '/read-receipt' && request.method === 'POST') {
+      return this.receiveReadReceipt(request);
     }
 
     if (request.headers.get('Upgrade') !== 'websocket') {
@@ -332,7 +376,7 @@ export class ChannelRoom {
       return;
     }
 
-    if (!['send', 'delete_message', 'pin_message', 'unpin_message'].includes(payload.type)) {
+    if (!['send', 'delete_message', 'pin_message', 'unpin_message', 'read', 'mark_read'].includes(payload.type)) {
       sendSocketError(ws, 'Unsupported message type');
       return;
     }
@@ -355,6 +399,23 @@ export class ChannelRoom {
       }
       if (payload.type === 'unpin_message') {
         const { packet } = await unpinRoomMessage(this.env, currentMeta, payload);
+        await this.broadcast(packet);
+        return;
+      }
+      if (payload.type === 'read' || payload.type === 'mark_read') {
+        const lastReadMessageId = await markRoomRead(this.env.DB, {
+          channelId: currentMeta.room.id,
+          userId: currentMeta.principal.userId,
+          messageId: payload.messageId
+        });
+        const packet = JSON.stringify({
+          protocolVersion: 1,
+          type: 'read_receipt',
+          roomId: Number(currentMeta.room.id),
+          roomKind: currentMeta.room.kind,
+          readUpToId: lastReadMessageId,
+          readerUserId: Number(currentMeta.principal.userId)
+        });
         await this.broadcast(packet);
         return;
       }

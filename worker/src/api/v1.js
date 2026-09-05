@@ -8,6 +8,7 @@ import {
 import { getSiteSettings } from '../data/site-settings.js';
 import { getUserByUsername } from '../data/users.js';
 import {
+  broadcastRoomReadReceipt,
   forwardInboxConnection,
   forwardRoomConnection,
   submitClientRoomAction
@@ -181,12 +182,13 @@ export function registerV1Routes(app) {
   });
 
   app.get('/api/v1/rooms/:kind/:id/messages', authMiddleware, async (c) => {
-    const { roomId, room } = await requireRoom(c);
+    const { session, roomId, room } = await requireRoom(c);
     const messages = await listMessages(
       c.env,
       roomId,
       c.req.query('before'),
-      sanitizeLimit(c.req.query('limit'))
+      sanitizeLimit(c.req.query('limit')),
+      { currentUserId: session?.userId, roomKind: room?.kind }
     );
     return c.json({
       room: {
@@ -246,7 +248,7 @@ export function registerV1Routes(app) {
   });
 
   app.post('/api/v1/rooms/:kind/:id/read', authMiddleware, async (c) => {
-    const { session, roomId } = await requireRoom(c);
+    const { session, roomId, room } = await requireRoom(c);
     const payload = await parseJsonRequest(c.req.raw);
     const messageId = payload.messageId === undefined ? null : Number(payload.messageId);
     if (messageId !== null && (!Number.isInteger(messageId) || messageId <= 0)) {
@@ -257,6 +259,20 @@ export function registerV1Routes(app) {
       userId: session.userId,
       messageId
     });
+    if (c.env.CHANNEL_ROOM && lastReadMessageId > 0) {
+      const p = broadcastRoomReadReceipt(c.env, {
+        room,
+        userId: session.userId,
+        lastReadMessageId
+      }).catch((err) => {
+        console.warn('Failed to broadcast room read receipt:', err);
+      });
+      if (c.executionCtx?.waitUntil) {
+        c.executionCtx.waitUntil(p);
+      } else {
+        await p;
+      }
+    }
     return c.json({ ok: true, lastReadMessageId });
   });
 

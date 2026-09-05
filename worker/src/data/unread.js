@@ -29,6 +29,35 @@ export async function markRoomRead(db, { channelId, userId, messageId = null }) 
 	return lastReadMessageId;
 }
 
+export async function getPeerLastReadMessageId(db, { channelId, myUserId }) {
+	const { results } = await db
+		.prepare(
+			`SELECT mr.last_read_message_id
+			 FROM channels c
+			 JOIN channel_members cm ON cm.channel_id = c.id
+			 LEFT JOIN message_reads mr ON mr.channel_id = cm.channel_id AND mr.user_id = cm.user_id
+			 WHERE c.id = ? AND c.kind = 'dm' AND cm.user_id != ?
+			 ORDER BY mr.last_read_message_id DESC
+			 LIMIT 1`,
+		)
+		.bind(Number(channelId), Number(myUserId))
+		.all();
+	return Number(results[0]?.last_read_message_id || 0);
+}
+
+export async function getUserLastReadMessageId(db, { channelId, userId }) {
+	const { results } = await db
+		.prepare(
+			`SELECT last_read_message_id
+			 FROM message_reads
+			 WHERE channel_id = ? AND user_id = ?
+			 LIMIT 1`,
+		)
+		.bind(Number(channelId), Number(userId))
+		.all();
+	return Number(results[0]?.last_read_message_id || 0);
+}
+
 export async function countUnreadMessages(db, { channelId, userId }) {
 	const { results } = await db
 		.prepare(

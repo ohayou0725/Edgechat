@@ -93,3 +93,19 @@ export async function submitExternalRoomMessage(env, payload) {
 		},
 	);
 }
+
+export async function broadcastRoomReadReceipt(env, { room, userId, lastReadMessageId }) {
+	return getChannelRoomStub(env, room.kind, room.id).fetch(
+		`${INTERNAL_ORIGIN}/read-receipt`,
+		{
+			method: "POST",
+			headers: createInternalHeaders({ "Content-Type": "application/json" }),
+			body: JSON.stringify({
+				room,
+				userId: Number(userId),
+				lastReadMessageId: Number(lastReadMessageId),
+			}),
+		},
+	);
+}
+

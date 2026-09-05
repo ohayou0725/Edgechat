@@ -68,7 +68,15 @@ function validateUpload(env, file) {
   }
 }
 
+const FILE_CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, HEAD, OPTIONS',
+  'access-control-allow-headers': 'Content-Type, Authorization'
+};
+
 export function registerUploadRoutes(app) {
+  app.options('/files/:key{.+}', () => new Response(null, { status: 204, headers: FILE_CORS_HEADERS }));
+
   app.post('/api/upload', async (c) => {
     if (!c.env.FILES) {
       return errorResponse('当前部署没有绑定 R2，无法上传附件', 503);
@@ -123,7 +131,7 @@ export function registerUploadRoutes(app) {
       Boolean(auth?.ok && auth.session.isAdmin)
     );
     if (!canRead) {
-      return new Response('Forbidden', { status: 403 });
+      return new Response('Forbidden', { status: 403, headers: FILE_CORS_HEADERS });
     }
     if (!c.env.FILES) {
       return errorResponse('当前部署没有绑定 R2，无法读取附件', 503);
@@ -138,7 +146,7 @@ export function registerUploadRoutes(app) {
 
     const fileMetadata = await getUploadedFileMetadata(c.env.DB, matchedKey);
     if (!object) {
-      return new Response('Not Found', { status: 404 });
+      return new Response('Not Found', { status: 404, headers: FILE_CORS_HEADERS });
     }
 
     let decrypted;
@@ -155,6 +163,10 @@ export function registerUploadRoutes(app) {
     if (object.uploaded) {
       headers.set('last-modified', object.uploaded.toUTCString());
     }
+
+    headers.set('access-control-allow-origin', '*');
+    headers.set('access-control-allow-methods', 'GET, HEAD, OPTIONS');
+    headers.set('access-control-allow-headers', 'Content-Type, Authorization');
 
     headers.set('x-content-type-options', 'nosniff');
     headers.set('referrer-policy', 'no-referrer');

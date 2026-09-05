@@ -66,6 +66,12 @@ app.use('/api/*', cors({
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 }));
 
+app.use('/files/*', cors({
+  origin: '*',
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['GET', 'HEAD', 'OPTIONS']
+}));
+
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 app.get('/api/site', async (c) => {

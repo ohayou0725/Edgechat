@@ -57,11 +57,21 @@ export function createMessageEditing({
 		}
 
 		return {
-			message: updatedMessage,
+			message: {
+				...updatedMessage,
+				roomId: Number(meta.room.id),
+				roomKind: meta.room.kind,
+			},
 			packet: JSON.stringify({
 				protocolVersion: 1,
 				type: "message_updated",
-				message: updatedMessage,
+				roomId: Number(meta.room.id),
+				roomKind: meta.room.kind,
+				message: {
+					...updatedMessage,
+					roomId: Number(meta.room.id),
+					roomKind: meta.room.kind,
+				},
 			}),
 		};
 	};

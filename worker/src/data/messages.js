@@ -48,6 +48,9 @@ export function mapMessage(row, content = row.content) {
 				}
 			: null,
 	};
+	if (row.channel_id !== undefined && row.channel_id !== null) {
+		message.channelId = Number(row.channel_id);
+	}
 	if (row.client_message_id) {
 		message.clientMessageId = row.client_message_id;
 	}

@@ -99,7 +99,7 @@ export async function fileBelongsToUser(db, key, userId) {
 	return Boolean(results[0]);
 }
 
-export async function canAccessFile(db, key, userId = null) {
+export async function canAccessFile(db, key, userId = null, isAdmin = false) {
 	const cleanKey = String(key || "");
 	if (!cleanKey) return false;
 
@@ -114,18 +114,22 @@ export async function canAccessFile(db, key, userId = null) {
 		.all();
 	if (publicRefs.results[0]) return true;
 	if (!Number.isFinite(Number(userId))) return false;
+	if (isAdmin) return true;
+
+	const encodedKey = encodeURIComponent(cleanKey);
 
 	// 发送前允许上传者预览；发送后则按消息所在公开群组或成员关系授权。
+	// 同时兼容原始 key 与 URL 编码 key 的匹配。
 	const { results } = await db
 		.prepare(
 			`SELECT 1 AS found
 			 WHERE EXISTS (
 			   SELECT 1 FROM uploaded_files uf
-			   WHERE uf.object_key = ? AND uf.owner_user_id = ?
+			   WHERE (uf.object_key = ? OR uf.object_key = ?) AND uf.owner_user_id = ?
 			 ) OR EXISTS (
 			   SELECT 1 FROM messages m
 			   JOIN channels c ON c.id = m.channel_id
-			   WHERE m.attachment_key = ?
+			   WHERE (m.attachment_key = ? OR m.attachment_key = ?)
 			     AND m.deleted_at IS NULL AND c.deleted_at IS NULL
 			     AND (c.kind = 'public' OR EXISTS (
 			       SELECT 1 FROM channel_members cm
@@ -133,7 +137,8 @@ export async function canAccessFile(db, key, userId = null) {
 			     ))
 			 )`,
 		)
-		.bind(cleanKey, Number(userId), cleanKey, Number(userId))
+		.bind(cleanKey, encodedKey, Number(userId), cleanKey, encodedKey, Number(userId))
 		.all();
 	return Boolean(results[0]);
 }
+

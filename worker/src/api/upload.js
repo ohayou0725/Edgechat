@@ -98,13 +98,30 @@ export function registerUploadRoutes(app) {
   });
 
   app.get('/files/:key{.+}', async (c) => {
-    const key = decodeURIComponent(c.req.param('key'));
+    let key = c.req.param('key');
+    try {
+      while (key.includes('%')) {
+        const decoded = decodeURIComponent(key);
+        if (decoded === key) break;
+        key = decoded;
+      }
+    } catch (_) {
+      try {
+        key = decodeURIComponent(key);
+      } catch (_) {}
+    }
+
     const authorization = c.req.header('authorization') || '';
     const token = authorization.startsWith('Bearer ')
       ? authorization.slice('Bearer '.length).trim()
       : new URL(c.req.url).searchParams.get('token') || '';
     const auth = token ? await validateSession(c.env, token) : null;
-    const canRead = await canAccessFile(c.env.DB, key, auth?.ok ? auth.session.userId : null);
+    const canRead = await canAccessFile(
+      c.env.DB,
+      key,
+      auth?.ok ? auth.session.userId : null,
+      Boolean(auth?.ok && auth.session.isAdmin)
+    );
     if (!canRead) {
       return new Response('Forbidden', { status: 403 });
     }
@@ -112,19 +129,23 @@ export function registerUploadRoutes(app) {
       return errorResponse('当前部署没有绑定 R2，无法读取附件', 503);
     }
 
-    const [object, fileMetadata] = await Promise.all([
-      c.env.FILES.get(key),
-      getUploadedFileMetadata(c.env.DB, key)
-    ]);
+    let object = await c.env.FILES.get(key);
+    let matchedKey = key;
+    if (!object && c.req.param('key') !== key) {
+      object = await c.env.FILES.get(c.req.param('key'));
+      if (object) matchedKey = c.req.param('key');
+    }
+
+    const fileMetadata = await getUploadedFileMetadata(c.env.DB, matchedKey);
     if (!object) {
       return new Response('Not Found', { status: 404 });
     }
 
     let decrypted;
     try {
-      decrypted = await decryptAttachment(c.env, await object.arrayBuffer(), key);
+      decrypted = await decryptAttachment(c.env, await object.arrayBuffer(), matchedKey);
     } catch (error) {
-      console.error('Failed to decrypt attachment', { key, error });
+      console.error('Failed to decrypt attachment', { key: matchedKey, error });
       throw error;
     }
 

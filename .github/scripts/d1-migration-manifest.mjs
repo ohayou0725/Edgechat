@@ -128,4 +128,9 @@ export const D1_MIGRATIONS = [
 		file: "worker/migrations/2026-09-01-message-mentions.sql",
 		artifacts: ["column:messages.mention_user_ids"],
 	},
+	{
+		id: "2026-09-05-message-edit",
+		file: "worker/migrations/2026-09-05-message-edit.sql",
+		artifacts: ["column:messages.edited_at"],
+	},
 ];

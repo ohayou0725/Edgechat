@@ -23,7 +23,6 @@ export function mapMessage(row, content = row.content) {
 		mentionUserIds: normalizeMentionUserIds(JSON.parse(row.mention_user_ids || "[]")),
 		mentions,
 		createdAt: row.created_at,
-		editedAt: row.edited_at || null,
 		source: row.source || "edgechat",
 		sender: {
 				kind: isExternal ? "external" : "local",
@@ -51,6 +50,9 @@ export function mapMessage(row, content = row.content) {
 	};
 	if (row.client_message_id) {
 		message.clientMessageId = row.client_message_id;
+	}
+	if (row.edited_at) {
+		message.editedAt = row.edited_at;
 	}
 	return message;
 }

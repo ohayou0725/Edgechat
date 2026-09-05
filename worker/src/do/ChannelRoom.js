@@ -156,7 +156,7 @@ export class ChannelRoom {
   }
 
   broadcastExcept(packet, exceptSocket) {
-    for (const [socket, meta] of this.connections.entries()) {
+    for (const socket of this.connections.keys()) {
       if (socket === exceptSocket) continue;
       try {
         socket.send(packet);

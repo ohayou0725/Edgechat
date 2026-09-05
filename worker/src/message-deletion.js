@@ -37,7 +37,6 @@ export function createMessageDeletion({
 			throw new MessageDeletionError("消息不存在");
 		}
 
-		let action = "delete";
 		const msg = await getMessageMeta(env.DB, meta.room.id, messageId);
 
 		if (msg) {
@@ -50,7 +49,6 @@ export function createMessageDeletion({
 				Number(msg.sender_id) === Number(meta.principal?.userId);
 
 			if (isSender) {
-				action = "recall";
 				const recallWindowSeconds = Number(env?.MESSAGE_RECALL_WINDOW_SECONDS || 120);
 				const recallWindowMs = recallWindowSeconds * 1000;
 				const createdAtStr = String(msg.created_at || "");
@@ -99,10 +97,7 @@ export function createMessageDeletion({
 			packet: JSON.stringify({
 				protocolVersion: 1,
 				type: "message_deleted",
-				action,
 				messageId,
-				operatorId: meta.principal?.userId,
-				senderId: msg?.sender_id ?? undefined,
 			}),
 		};
 	};

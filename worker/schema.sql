@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS messages (
   client_message_id TEXT,
   mention_user_ids TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  edited_at TEXT,
   deleted_at TEXT,
   CHECK (
     (sender_kind = 'local' AND sender_id IS NOT NULL)

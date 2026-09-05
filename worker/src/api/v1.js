@@ -96,6 +96,9 @@ export function registerV1Routes(app) {
         idempotentMessages: true,
         idempotentUploads: Boolean(c.env.FILES),
         roomSync: true,
+        messageEdit: true,
+        messageRecall: true,
+        typingIndicator: true,
         backgroundPush: false
       }
     });
@@ -244,6 +247,24 @@ export function registerV1Routes(app) {
       room,
       principal: session,
       action: { type: 'delete_message', messageId: Number(c.req.param('messageId')) }
+    });
+  });
+
+  app.patch('/api/v1/rooms/:kind/:id/messages/:messageId', authMiddleware, async (c) => {
+    const { session, room } = await requireRoom(c);
+    const payload = await parseJsonRequest(c.req.raw);
+    const content = String(payload.content || '').trim();
+    if (!content) {
+      return v1ErrorResponse('content_required', '消息内容不能为空');
+    }
+    return submitClientRoomAction(c.env, {
+      room,
+      principal: session,
+      action: {
+        type: 'edit_message',
+        messageId: Number(c.req.param('messageId')),
+        content
+      }
     });
   });
 

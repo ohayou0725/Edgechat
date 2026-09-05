@@ -23,6 +23,7 @@ export function mapMessage(row, content = row.content) {
 		mentionUserIds: normalizeMentionUserIds(JSON.parse(row.mention_user_ids || "[]")),
 		mentions,
 		createdAt: row.created_at,
+		editedAt: row.edited_at || null,
 		source: row.source || "edgechat",
 		sender: {
 				kind: isExternal ? "external" : "local",
@@ -85,7 +86,7 @@ const MESSAGE_SELECT = `SELECT
 	  m.attachment_size, m.sender_kind, m.external_sender_id, m.external_sender_name,
 		  m.external_sender_avatar_url, m.source, m.source_message_id,
 		  m.source_attachment_id, m.source_attachment_unique_id, m.client_message_id,
-		  m.mention_user_ids, m.created_at,
+		  m.mention_user_ids, m.created_at, m.edited_at,
 	  u.id AS sender_id, u.username AS sender_username,
 	  u.display_name AS sender_display_name, u.avatar_key AS sender_avatar_key,
 	  COALESCE((
@@ -431,3 +432,45 @@ export function insertMessageIdempotent(env, payload) {
 export function insertExternalMessage(env, payload) {
 	return persistMessage(env, payload);
 }
+
+export async function updateMessageContent(env, {
+	channelId,
+	messageId,
+	senderId,
+	content,
+}) {
+	const numericChannelId = Number(channelId);
+	const numericMessageId = Number(messageId);
+	const numericSenderId = Number(senderId);
+	const cleanContent = String(content || "").trim();
+
+	if (!cleanContent) {
+		throw new Error("Message content cannot be empty");
+	}
+
+	const storedContent = await encryptMessageContent(env, cleanContent, {
+		channelId: numericChannelId,
+		senderId: numericSenderId,
+		senderContext: "",
+	});
+
+	const result = await env.DB
+		.prepare(
+			`UPDATE messages
+			 SET content = ?,
+			     edited_at = CURRENT_TIMESTAMP
+			 WHERE id = ?
+			   AND channel_id = ?
+			   AND sender_id = ?
+			   AND deleted_at IS NULL`,
+		)
+		.bind(storedContent, numericMessageId, numericChannelId, numericSenderId)
+		.run();
+
+	if (Number(result.meta?.changes || 0) <= 0) {
+		return null;
+	}
+
+	return getMessageById(env, numericMessageId);
+}
+

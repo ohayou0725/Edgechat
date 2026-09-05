@@ -4,6 +4,7 @@ import {
   submitRoomMessageIdempotent
 } from '../message-submission.js';
 import { deleteRoomMessage, MessageDeletionError } from '../message-deletion.js';
+import { editRoomMessage, MessageEditingError } from '../message-editing.js';
 import {
   MessagePinningError,
   pinRoomMessage,
@@ -154,6 +155,17 @@ export class ChannelRoom {
     }
   }
 
+  broadcastExcept(packet, exceptSocket) {
+    for (const [socket, meta] of this.connections.entries()) {
+      if (socket === exceptSocket) continue;
+      try {
+        socket.send(packet);
+      } catch {
+        this.connections.delete(socket);
+      }
+    }
+  }
+
   runMessageProjections(room, message) {
     this.state.waitUntil(
       Promise.all([
@@ -237,10 +249,15 @@ export class ChannelRoom {
         }
         return Response.json({ created: result.created, message: result.message });
       }
-      if (action?.type === 'delete_message') {
+      if (action?.type === 'delete_message' || action?.type === 'recall_message') {
         const result = await deleteRoomMessage(this.env, meta, action);
         await this.broadcast(result.packet);
         return Response.json({ ok: true, messageId: result.messageId });
+      }
+      if (action?.type === 'edit_message') {
+        const result = await editRoomMessage(this.env, meta, action);
+        await this.broadcast(result.packet);
+        return Response.json({ ok: true, message: result.message });
       }
       if (action?.type === 'pin_message') {
         const result = await pinRoomMessage(this.env, meta, action);
@@ -277,7 +294,8 @@ export class ChannelRoom {
       if (
         error instanceof MessageSubmissionError ||
         error instanceof MessageDeletionError ||
-        error instanceof MessagePinningError
+        error instanceof MessagePinningError ||
+        error instanceof MessageEditingError
       ) {
         return Response.json(
           { error: { code: error.code || 'invalid_request', message: error.message } },
@@ -376,8 +394,21 @@ export class ChannelRoom {
       return;
     }
 
-    if (!['send', 'delete_message', 'pin_message', 'unpin_message', 'read', 'mark_read'].includes(payload.type)) {
+    if (!['send', 'delete_message', 'recall_message', 'edit_message', 'typing', 'pin_message', 'unpin_message', 'read', 'mark_read'].includes(payload.type)) {
       sendSocketError(ws, 'Unsupported message type');
+      return;
+    }
+
+    if (payload.type === 'typing') {
+      const packet = JSON.stringify({
+        protocolVersion: 1,
+        type: 'typing',
+        roomId: Number(meta.room.id),
+        roomKind: meta.room.kind,
+        userId: Number(meta.principal.userId),
+        isTyping: Boolean(payload.isTyping ?? true),
+      });
+      this.broadcastExcept(packet, ws);
       return;
     }
 
@@ -387,8 +418,13 @@ export class ChannelRoom {
         return;
       }
 
-      if (payload.type === 'delete_message') {
+      if (payload.type === 'delete_message' || payload.type === 'recall_message') {
         const { packet } = await deleteRoomMessage(this.env, currentMeta, payload);
+        await this.broadcast(packet);
+        return;
+      }
+      if (payload.type === 'edit_message') {
+        const { packet } = await editRoomMessage(this.env, currentMeta, payload);
         await this.broadcast(packet);
         return;
       }
@@ -432,7 +468,8 @@ export class ChannelRoom {
       if (
         error instanceof MessageSubmissionError ||
         error instanceof MessageDeletionError ||
-        error instanceof MessagePinningError
+        error instanceof MessagePinningError ||
+        error instanceof MessageEditingError
       ) {
         sendSocketError(ws, error.message);
         return;

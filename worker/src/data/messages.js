@@ -57,6 +57,16 @@ export function mapMessage(row, content = row.content) {
 	if (row.edited_at) {
 		message.editedAt = row.edited_at;
 	}
+	if (row.reply_to_message_id !== undefined && row.reply_to_message_id !== null) {
+		message.replyToMessageId = Number(row.reply_to_message_id);
+	}
+	if (row.reply_to_json) {
+		try {
+			message.replyTo = typeof row.reply_to_json === 'string' ? JSON.parse(row.reply_to_json) : row.reply_to_json;
+		} catch (_) {
+			message.replyTo = null;
+		}
+	}
 	return message;
 }
 
@@ -91,7 +101,7 @@ const MESSAGE_SELECT = `SELECT
 	  m.attachment_size, m.sender_kind, m.external_sender_id, m.external_sender_name,
 		  m.external_sender_avatar_url, m.source, m.source_message_id,
 		  m.source_attachment_id, m.source_attachment_unique_id, m.client_message_id,
-		  m.mention_user_ids, m.created_at, m.edited_at,
+		  m.mention_user_ids, m.reply_to_message_id, m.reply_to_json, m.created_at, m.edited_at,
 	  u.id AS sender_id, u.username AS sender_username,
 	  u.display_name AS sender_display_name, u.avatar_key AS sender_avatar_key,
 	  COALESCE((
@@ -307,6 +317,8 @@ async function persistMessage(env, {
 	sourceAttachmentUniqueId = null,
 	clientMessageId = null,
 	mentionUserIds = [],
+	replyTo = null,
+	replyToMessageId = null,
 }) {
 	const isExternal = externalSender !== null;
 	const normalizedSenderId = isExternal ? null : Number(senderId);
@@ -347,6 +359,19 @@ async function persistMessage(env, {
 	const storedMentionUserIds = JSON.stringify(
 		isExternal ? [] : normalizeMentionUserIds(mentionUserIds),
 	);
+	const cleanReplyToMessageId = replyToMessageId
+		? Number(replyToMessageId)
+		: (replyTo?.id ? Number(replyTo.id) : null);
+	const cleanReplyToJson = replyTo
+		? JSON.stringify({
+				id: replyTo.id ? Number(replyTo.id) : null,
+				clientMessageId: replyTo.clientMessageId ? String(replyTo.clientMessageId) : null,
+				senderId: replyTo.senderId ? Number(replyTo.senderId) : 0,
+				senderDisplayName: String(replyTo.senderDisplayName || "").slice(0, 64),
+				content: String(replyTo.content || "").slice(0, 300),
+				attachmentType: replyTo.attachmentType ? String(replyTo.attachmentType) : null,
+			})
+		: null;
 	try {
 		const result = await env.DB
 			.prepare(
@@ -355,8 +380,8 @@ async function persistMessage(env, {
 				   attachment_type, attachment_size, sender_kind, external_sender_id,
 					   external_sender_name, external_sender_avatar_url, source, source_message_id,
 					   source_attachment_id, source_attachment_unique_id, client_message_id,
-					   mention_user_ids
-					 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					   mention_user_ids, reply_to_message_id, reply_to_json
+					 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				Number(channelId),
@@ -376,6 +401,8 @@ async function persistMessage(env, {
 						sourceAttachmentUniqueId ? String(sourceAttachmentUniqueId) : null,
 						normalizedClientMessageId,
 						storedMentionUserIds,
+						cleanReplyToMessageId,
+						cleanReplyToJson,
 					)
 			.run();
 		return { message: await getMessageById(env, result.meta.last_row_id), created: true };
@@ -418,6 +445,8 @@ export async function insertMessage(env, {
 	attachment,
 	clientMessageId = null,
 	mentionUserIds = [],
+	replyTo = null,
+	replyToMessageId = null,
 }) {
 	const result = await persistMessage(env, {
 		channelId,
@@ -426,6 +455,8 @@ export async function insertMessage(env, {
 		attachment,
 		clientMessageId,
 		mentionUserIds,
+		replyTo,
+		replyToMessageId,
 	});
 	return result.message;
 }

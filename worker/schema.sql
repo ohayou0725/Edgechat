@@ -113,6 +113,8 @@ CREATE TABLE IF NOT EXISTS messages (
   source_attachment_unique_id TEXT,
   client_message_id TEXT,
   mention_user_ids TEXT NOT NULL DEFAULT '[]',
+  reply_to_message_id INTEGER,
+  reply_to_json TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   edited_at TEXT,
   deleted_at TEXT,

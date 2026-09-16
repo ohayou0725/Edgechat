@@ -234,10 +234,12 @@ export function registerV1Routes(app) {
       action: {
         type: 'send',
         clientMessageId: payload.clientMessageId,
-			content: payload.content,
-			attachment: payload.attachment || null,
-			mentionUserIds: payload.mentionUserIds || []
-		  }
+        content: payload.content,
+        attachment: payload.attachment || null,
+        mentionUserIds: payload.mentionUserIds || [],
+        replyToMessageId: payload.replyToMessageId || payload.replyTo?.id || null,
+        replyTo: payload.replyTo || null
+      }
     });
   });
 

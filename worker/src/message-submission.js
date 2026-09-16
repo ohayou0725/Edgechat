@@ -29,6 +29,8 @@ export function createMessageSubmission({
 						content: payload.content,
 						attachment: payload.attachment,
 						mentionUserIds,
+						replyToMessageId: payload.replyToMessageId || payload.replyTo?.id || null,
+						replyTo: payload.replyTo || null,
 			};
 			if (payload.clientMessageId) {
 				persistencePayload.clientMessageId = payload.clientMessageId;

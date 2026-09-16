@@ -1,4 +1,5 @@
 import { publicFileUrl } from "../utils.js";
+import { getMessageById } from "./messages.js";
 
 function mapVisibleChannel(row) {
 	return {
@@ -39,7 +40,9 @@ function mapAdminChannel(row, includeAvatar) {
 	return channel;
 }
 
-export async function listVisibleChannels(db, userId) {
+export async function listVisibleChannels(dbOrEnv, userId) {
+	const db = dbOrEnv?.DB || dbOrEnv;
+	const env = dbOrEnv?.DB ? dbOrEnv : null;
 	const normalizedUserId = Number(userId);
 	const { results } = await db
 		.prepare(
@@ -52,6 +55,7 @@ export async function listVisibleChannels(db, userId) {
 			   EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ? AND cm.role = 'owner') AS can_manage,
 			   (SELECT COUNT(*) FROM channel_members cm WHERE cm.channel_id = c.id) AS member_count,
 			   (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL) AS last_message_at,
+			   (SELECT m.id FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 1) AS last_message_id,
 				   CASE WHEN EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?)
 				     THEN (SELECT COUNT(*) FROM messages m
 				           WHERE m.channel_id = c.id AND m.deleted_at IS NULL
@@ -74,7 +78,7 @@ export async function listVisibleChannels(db, userId) {
 				   AND (c.kind = 'public' OR EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?))
 				 ORDER BY
 				   CASE WHEN c.name = 'general' THEN 0 ELSE 1 END,
-				   CASE c.kind WHEN 'public' THEN 0 ELSE 1 END,
+				   last_message_at DESC NULLS LAST,
 				   c.name ASC`,
 		)
 			.bind(
@@ -90,7 +94,20 @@ export async function listVisibleChannels(db, userId) {
 				normalizedUserId,
 			)
 		.all();
-	return results.map(mapVisibleChannel);
+	const channels = results.map(mapVisibleChannel);
+	if (env) {
+		const lastMessages = await Promise.all(
+			results.map((row) =>
+				row.last_message_id
+					? getMessageById(env, row.last_message_id)
+					: Promise.resolve(null),
+			),
+		);
+		for (let i = 0; i < channels.length; i++) {
+			channels[i].lastMessage = lastMessages[i] || null;
+		}
+	}
+	return channels;
 }
 
 export async function listAdminChannels(db, { includeAvatar = true } = {}) {

@@ -133,4 +133,12 @@ export const D1_MIGRATIONS = [
 		file: "worker/migrations/2026-09-05-message-edit.sql",
 		artifacts: ["column:messages.edited_at"],
 	},
+	{
+		id: "2026-09-05-message-reply",
+		file: "worker/migrations/2026-09-05-message-reply.sql",
+		artifacts: [
+			"column:messages.reply_to_message_id",
+			"column:messages.reply_to_json",
+		],
+	},
 ];

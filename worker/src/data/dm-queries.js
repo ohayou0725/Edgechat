@@ -1,4 +1,5 @@
 import { publicFileUrl } from "../utils.js";
+import { getMessageById } from "./messages.js";
 
 function mapUserDm(row) {
 	return {
@@ -26,7 +27,9 @@ function mapAdminDm(row) {
 	};
 }
 
-export async function listUserDms(db, userId) {
+export async function listUserDms(dbOrEnv, userId) {
+	const db = dbOrEnv?.DB || dbOrEnv;
+	const env = dbOrEnv?.DB ? dbOrEnv : null;
 	const normalizedUserId = Number(userId);
 	const { results } = await db
 		.prepare(
@@ -37,6 +40,7 @@ export async function listUserDms(db, userId) {
 			   other.display_name AS other_display_name,
 			   other.avatar_key AS other_avatar_key,
 			   (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL) AS last_message_at,
+			   (SELECT m.id FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 1) AS last_message_id,
 				   (SELECT COUNT(*) FROM messages m
 				    WHERE m.channel_id = c.id AND m.deleted_at IS NULL
 				      AND (m.sender_id IS NULL OR m.sender_id != ?)
@@ -50,7 +54,20 @@ export async function listUserDms(db, userId) {
 		)
 			.bind(normalizedUserId, normalizedUserId, normalizedUserId, normalizedUserId)
 		.all();
-	return results.map(mapUserDm);
+	const dms = results.map(mapUserDm);
+	if (env) {
+		const lastMessages = await Promise.all(
+			results.map((row) =>
+				row.last_message_id
+					? getMessageById(env, row.last_message_id)
+					: Promise.resolve(null),
+			),
+		);
+		for (let i = 0; i < dms.length; i++) {
+			dms[i].lastMessage = lastMessages[i] || null;
+		}
+	}
+	return dms;
 }
 
 export async function listAdminDms(db) {

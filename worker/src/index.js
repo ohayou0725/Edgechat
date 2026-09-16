@@ -305,8 +305,8 @@ app.get('/api/bootstrap', async (c) => {
   await ensureGeneralChannelMembership(c.env.DB, session.userId);
   const [users, channels, dms] = await Promise.all([
     listActiveUsers(c.env.DB, session.userId),
-    listVisibleChannels(c.env.DB, session.userId),
-    listUserDms(c.env.DB, session.userId)
+    listVisibleChannels(c.env, session.userId),
+    listUserDms(c.env, session.userId)
   ]);
 
   return c.json({ users, channels, dms });

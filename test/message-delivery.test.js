@@ -31,10 +31,35 @@ test("消息提交 module 统一持久化参数与广播 packet", async () => {
 			content: "hello",
 			attachment: { key: "a" },
 			mentionUserIds: [],
+			replyToMessageId: null,
+			replyTo: null,
 		},
 	}]);
 	assert.equal(result.message, message);
 	assert.deepEqual(JSON.parse(result.packet), { protocolVersion: 1, type: "message", message });
+});
+
+test("消息提交把回复目标透传给持久化层", async () => {
+	const calls = [];
+	const submit = createMessageSubmission({
+		async persistMessage(env, args) {
+			calls.push(args);
+			return { id: 12, content: "reply" };
+		},
+	});
+
+	await submit(
+		{},
+		{ room: { id: 3, kind: "public" }, principal: { userId: 7 } },
+		{
+			content: "reply",
+			replyToMessageId: 99,
+			replyTo: { id: 99, senderId: 5, senderDisplayName: "Bob" },
+		},
+	);
+
+	assert.equal(calls[0].replyToMessageId, 99);
+	assert.deepEqual(calls[0].replyTo, { id: 99, senderId: 5, senderDisplayName: "Bob" });
 });
 
 test("消息提交只转换可预期的空消息错误", async () => {
